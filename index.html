@@ -72,6 +72,18 @@
     }
     .stat-number { font-size:32px; font-weight:bold; color:#ff6600; }
     .stat-label { font-size:14px; color:#ccc; margin-top:5px; }
+    
+    .ferramentas-selecionadas {
+        background:#1a1a1a; padding:15px; border-radius:8px; 
+        border:2px solid #ff6600; margin:15px 0;
+    }
+    .ferramentas-selecionadas h3 {
+        color:#ff6600; margin-top:0; margin-bottom:15px; font-size:18px;
+    }
+    .badge-count {
+        background:#ff6600; color:#000; padding:3px 10px; 
+        border-radius:12px; font-size:12px; font-weight:bold; margin-left:10px;
+    }
 </style>
 </head>
 <body>
@@ -137,6 +149,7 @@
         <input type="text" id="nomeEmprestimo" placeholder="Nome completo">
     </div>
     
+    <h3 style="margin-top:25px;">Selecionar Ferramentas</h3>
     <div class="form-group">
         <label>Ferramenta</label>
         <select id="ferramentaEmprestimo">
@@ -149,7 +162,11 @@
         <input type="number" id="quantidadeEmprestimo" min="1" value="1">
     </div>
     
-    <button class="action" onclick="abrirPopupAssinatura('emprestimo')">Registrar Empréstimo</button>
+    <button class="action" onclick="adicionarFerramentaLista()" style="background:#333; margin-bottom:20px;">➕ Adicionar à Lista</button>
+    
+    <div id="listaFerramentasEmprestimo"></div>
+    
+    <button class="action" onclick="abrirPopupAssinatura('emprestimo')">✍️ Registrar Empréstimo com Assinatura</button>
 </div>
 
 <div id="devolucao" class="page">
@@ -216,6 +233,7 @@ let emprestimos = JSON.parse(localStorage.getItem('emprestimos')) || [];
 let historico = JSON.parse(localStorage.getItem('historico')) || [];
 let signaturePad;
 let tipoAssinatura = '';
+let ferramentasSelecionadas = [];
 
 function showPage(pageId) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -319,30 +337,90 @@ function atualizarSelectFerramentas() {
     });
 }
 
+function adicionarFerramentaLista() {
+    const ferramentaId = document.getElementById('ferramentaEmprestimo').value;
+    const quantidade = parseInt(document.getElementById('quantidadeEmprestimo').value);
+    
+    if(!ferramentaId || quantidade < 1) {
+        alert('⚠️ Selecione uma ferramenta e quantidade válida!');
+        return;
+    }
+    
+    const ferramenta = estoque.find(f => f.id == ferramentaId);
+    const disponiveis = ferramenta.quantidade - ferramenta.emprestadas;
+    
+    const quantidadeJaSelecionada = ferramentasSelecionadas
+        .filter(f => f.ferramentaId == ferramentaId)
+        .reduce((total, f) => total + f.quantidade, 0);
+    
+    if(quantidade + quantidadeJaSelecionada > disponiveis) {
+        alert(`⚠️ Quantidade não disponível! Disponível: ${disponiveis}, Já selecionado: ${quantidadeJaSelecionada}`);
+        return;
+    }
+    
+    ferramentasSelecionadas.push({
+        ferramentaId: parseInt(ferramentaId),
+        ferramentaNome: ferramenta.nome,
+        quantidade: quantidade
+    });
+    
+    document.getElementById('ferramentaEmprestimo').value = '';
+    document.getElementById('quantidadeEmprestimo').value = '1';
+    
+    atualizarListaFerramentasEmprestimo();
+}
+
+function atualizarListaFerramentasEmprestimo() {
+    const container = document.getElementById('listaFerramentasEmprestimo');
+    
+    if(ferramentasSelecionadas.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+    
+    let html = `<div class="ferramentas-selecionadas">
+        <h3>📋 Ferramentas Selecionadas <span class="badge-count">${ferramentasSelecionadas.length}</span></h3>
+        <table><thead><tr><th>Ferramenta</th><th>Quantidade</th><th>Ações</th></tr></thead><tbody>`;
+    
+    ferramentasSelecionadas.forEach((item, index) => {
+        html += `
+            <tr>
+                <td><strong>${item.ferramentaNome}</strong></td>
+                <td>${item.quantidade}</td>
+                <td><button class="btn-small" onclick="removerFerramentaLista(${index})" style="background:#dc3545;">❌ Remover</button></td>
+            </tr>
+        `;
+    });
+    
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+}
+
+function removerFerramentaLista(index) {
+    ferramentasSelecionadas.splice(index, 1);
+    atualizarListaFerramentasEmprestimo();
+}
+
 function abrirPopupAssinatura(tipo) {
     tipoAssinatura = tipo;
     
     if(tipo === 'emprestimo') {
         const nome = document.getElementById('nomeEmprestimo').value.trim();
-        const ferramentaId = document.getElementById('ferramentaEmprestimo').value;
-        const quantidade = parseInt(document.getElementById('quantidadeEmprestimo').value);
         
-        if(!nome || !ferramentaId || quantidade < 1) {
-            alert('Preencha todos os campos!');
+        if(!nome) {
+            alert('⚠️ Preencha o nome da pessoa!');
             return;
         }
         
-        const ferramenta = estoque.find(f => f.id == ferramentaId);
-        const disponiveis = ferramenta.quantidade - ferramenta.emprestadas;
-        
-        if(quantidade > disponiveis) {
-            alert('Quantidade solicitada não disponível!');
+        if(ferramentasSelecionadas.length === 0) {
+            alert('⚠️ Adicione pelo menos uma ferramenta à lista!');
             return;
         }
+        
     } else if(tipo === 'devolucao') {
         const emprestimoId = document.getElementById('emprestimoSelect').value;
         if(!emprestimoId) {
-            alert('Selecione um empréstimo!');
+            alert('⚠️ Selecione um empréstimo para devolver!');
             return;
         }
     }
@@ -391,39 +469,50 @@ function confirmarAssinatura() {
 
 function registrarEmprestimo(assinatura) {
     const nome = document.getElementById('nomeEmprestimo').value.trim();
-    const ferramentaId = parseInt(document.getElementById('ferramentaEmprestimo').value);
-    const quantidade = parseInt(document.getElementById('quantidadeEmprestimo').value);
     
-    const ferramenta = estoque.find(f => f.id === ferramentaId);
-    ferramenta.emprestadas += quantidade;
-    
-    const emprestimo = {
-        id: Date.now(),
-        nome: nome,
-        ferramentaId: ferramentaId,
-        ferramentaNome: ferramenta.nome,
-        quantidade: quantidade,
-        dataEmprestimo: new Date().toLocaleString('pt-BR'),
-        assinaturaEmprestimo: assinatura,
-        devolvido: false
-    };
-    
-    emprestimos.push(emprestimo);
-    historico.push({...emprestimo, tipo: 'Empréstimo'});
+    ferramentasSelecionadas.forEach(item => {
+        const ferramenta = estoque.find(f => f.id === item.ferramentaId);
+        ferramenta.emprestadas += item.quantidade;
+        
+        const emprestimo = {
+            id: Date.now() + Math.random(),
+            nome: nome,
+            ferramentaId: item.ferramentaId,
+            ferramentaNome: item.ferramentaNome,
+            quantidade: item.quantidade,
+            dataEmprestimo: new Date().toLocaleString('pt-BR'),
+            assinaturaEmprestimo: assinatura,
+            devolvido: false
+        };
+        
+        emprestimos.push(emprestimo);
+        historico.push({...emprestimo, tipo: 'Empréstimo'});
+    });
     
     salvarDados();
     
+    const totalFerramentas = ferramentasSelecionadas.length;
+    
     document.getElementById('nomeEmprestimo').value = '';
     document.getElementById('quantidadeEmprestimo').value = '1';
+    ferramentasSelecionadas = [];
+    atualizarListaFerramentasEmprestimo();
     
-    alert('Empréstimo registrado com sucesso!');
+    alert(`✅ Empréstimo registrado com sucesso! Total: ${totalFerramentas} ferramenta(s)`);
 }
 
 function atualizarSelectEmprestimos() {
     const select = document.getElementById('emprestimoSelect');
     select.innerHTML = '<option value="">Selecione o empréstimo</option>';
     
-    emprestimos.filter(e => !e.devolvido).forEach(emprestimo => {
+    const emprestimosPendentes = emprestimos.filter(e => !e.devolvido);
+    
+    if(emprestimosPendentes.length === 0) {
+        select.innerHTML = '<option value="">Nenhum empréstimo pendente</option>';
+        return;
+    }
+    
+    emprestimosPendentes.forEach(emprestimo => {
         const option = document.createElement('option');
         option.value = emprestimo.id;
         option.textContent = `${emprestimo.nome} - ${emprestimo.ferramentaNome} (${emprestimo.quantidade}) - ${emprestimo.dataEmprestimo}`;
@@ -432,7 +521,9 @@ function atualizarSelectEmprestimos() {
 }
 
 function preencherDadosDevolucao() {
-    const emprestimoId = parseInt(document.getElementById('emprestimoSelect').value);
+    const emprestimoSelect = document.getElementById('emprestimoSelect');
+    const emprestimoId = emprestimoSelect.value;
+    
     if(!emprestimoId) {
         document.getElementById('nomeDevolucao').value = '';
         document.getElementById('ferramentaDevolucao').value = '';
@@ -440,18 +531,43 @@ function preencherDadosDevolucao() {
         return;
     }
     
-    const emprestimo = emprestimos.find(e => e.id === emprestimoId);
-    document.getElementById('nomeDevolucao').value = emprestimo.nome;
-    document.getElementById('ferramentaDevolucao').value = emprestimo.ferramentaNome;
-    document.getElementById('quantidadeDevolucao').value = emprestimo.quantidade;
+    const emprestimo = emprestimos.find(e => e.id == emprestimoId);
+    
+    if(emprestimo) {
+        document.getElementById('nomeDevolucao').value = emprestimo.nome;
+        document.getElementById('ferramentaDevolucao').value = emprestimo.ferramentaNome;
+        document.getElementById('quantidadeDevolucao').value = emprestimo.quantidade;
+    }
 }
 
 function registrarDevolucao(assinatura) {
-    const emprestimoId = parseInt(document.getElementById('emprestimoSelect').value);
-    const emprestimo = emprestimos.find(e => e.id === emprestimoId);
+    const emprestimoSelect = document.getElementById('emprestimoSelect');
+    const emprestimoId = emprestimoSelect.value;
+    
+    if(!emprestimoId) {
+        alert('⚠️ Erro ao processar devolução!');
+        return;
+    }
+    
+    const emprestimo = emprestimos.find(e => e.id == emprestimoId);
+    
+    if(!emprestimo) {
+        alert('⚠️ Empréstimo não encontrado!');
+        return;
+    }
     
     const ferramenta = estoque.find(f => f.id === emprestimo.ferramentaId);
+    
+    if(!ferramenta) {
+        alert('⚠️ Ferramenta não encontrada no estoque!');
+        return;
+    }
+    
     ferramenta.emprestadas -= emprestimo.quantidade;
+    
+    if(ferramenta.emprestadas < 0) {
+        ferramenta.emprestadas = 0;
+    }
     
     emprestimo.devolvido = true;
     emprestimo.dataDevolucao = new Date().toLocaleString('pt-BR');
@@ -469,8 +585,10 @@ function registrarDevolucao(assinatura) {
     document.getElementById('ferramentaDevolucao').value = '';
     document.getElementById('quantidadeDevolucao').value = '';
     
-    alert('Devolução registrada com sucesso!');
+    alert(`✅ Devolução registrada com sucesso!\n${emprestimo.ferramentaNome} (${emprestimo.quantidade})`);
+    
     atualizarSelectEmprestimos();
+    atualizarTabelaEstoque();
 }
 
 function atualizarTabelaHistorico() {
